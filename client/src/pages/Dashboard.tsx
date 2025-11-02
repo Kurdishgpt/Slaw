@@ -197,7 +197,7 @@ export default function Dashboard() {
                         <p className="font-medium truncate">{user.username}</p>
                         <p className="text-sm text-muted-foreground">{user.points} points</p>
                       </div>
-                      {user.points >= 10 && (
+                      {user.points >= 999 && (
                         <Badge variant="secondary" className="text-xs">MAX</Badge>
                       )}
                     </div>
@@ -231,8 +231,12 @@ export default function Dashboard() {
                 <p className="font-semibold">14 hours</p>
               </div>
               <div className="text-right">
+                <p className="text-sm text-muted-foreground">Daily Link Limit</p>
+                <p className="font-semibold">10 links/day</p>
+              </div>
+              <div className="text-right">
                 <p className="text-sm text-muted-foreground">Max Points</p>
-                <p className="font-semibold">10 points</p>
+                <p className="font-semibold">999 points</p>
               </div>
             </div>
           </CardContent>

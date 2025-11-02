@@ -11,6 +11,8 @@ export const discordUsers = pgTable("discord_users", {
   avatar: text("avatar"),
   points: integer("points").notNull().default(0),
   lastPointEarned: bigint("last_point_earned", { mode: "number" }),
+  dailyLinksPosted: integer("daily_links_posted").notNull().default(0),
+  lastDailyReset: bigint("last_daily_reset", { mode: "number" }),
   linkedApiKey: text("linked_api_key"),
   inVoiceChannel: boolean("in_voice_channel").notNull().default(false),
   voiceChannelName: text("voice_channel_name"),
@@ -23,6 +25,7 @@ export const activities = pgTable("activities", {
   userId: varchar("user_id").notNull(),
   type: text("type").notNull(), // 'paste' or 'server'
   link: text("link").notNull(),
+  messageId: varchar("message_id"),
   pointsEarned: integer("points_earned").notNull(),
   timestamp: bigint("timestamp", { mode: "number" }).notNull(),
 });

@@ -6,6 +6,10 @@ import { Pool } from "@neondatabase/serverless";
 import { eq, desc } from "drizzle-orm";
 
 export interface IStorage {
+  // Bot Status
+  setBotStatus(status: 'online' | 'offline'): void;
+  getBotStatus(): { status: 'online' | 'offline'; lastSync: number };
+  
   // Discord Users
   getUser(id: string): Promise<DiscordUser | undefined>;
   getUserByApiKey(apiKey: string): Promise<DiscordUser | undefined>;
@@ -16,11 +20,17 @@ export interface IStorage {
   upsertUser(discordId: string, username: string, discriminator?: string | null, avatar?: string | null): Promise<DiscordUser>;
   linkApiKey(userId: string, apiKey: string): Promise<DiscordUser>;
   updateVoiceStatus(userId: string, inVoice: boolean, channelName: string | null): Promise<DiscordUser>;
+  incrementDailyLinks(userId: string): Promise<DiscordUser>;
+  decrementDailyLinks(userId: string): Promise<DiscordUser>;
+  resetDailyLinksIfNeeded(userId: string): Promise<DiscordUser>;
   
   // Activities
   getRecentActivities(limit: number): Promise<Activity[]>;
   getAllActivities(): Promise<Activity[]>;
   createActivity(activity: InsertActivity): Promise<Activity>;
+  getActivityByLink(link: string): Promise<Activity | undefined>;
+  getActivityByMessageId(messageId: string): Promise<Activity | undefined>;
+  deleteActivity(id: string): Promise<void>;
   
   // API Keys
   getApiKey(key: string): Promise<ApiKey | undefined>;
@@ -79,6 +89,8 @@ export class MemStorage implements IStorage {
       avatar: insertUser.avatar ?? null,
       points: 0,
       lastPointEarned: null,
+      dailyLinksPosted: 0,
+      lastDailyReset: null,
       linkedApiKey: null,
       inVoiceChannel: false,
       voiceChannelName: null,
@@ -113,9 +125,25 @@ export class MemStorage implements IStorage {
 
   async createActivity(insertActivity: InsertActivity): Promise<Activity> {
     const id = randomUUID();
-    const activity: Activity = { id, ...insertActivity };
+    const activity: Activity = { 
+      id, 
+      ...insertActivity,
+      messageId: insertActivity.messageId ?? null 
+    };
     this.activities.set(id, activity);
     return activity;
+  }
+
+  async getActivityByLink(link: string): Promise<Activity | undefined> {
+    return Array.from(this.activities.values()).find(a => a.link === link);
+  }
+
+  async getActivityByMessageId(messageId: string): Promise<Activity | undefined> {
+    return Array.from(this.activities.values()).find(a => a.messageId === messageId);
+  }
+
+  async deleteActivity(id: string): Promise<void> {
+    this.activities.delete(id);
   }
 
   // API Keys
@@ -196,6 +224,8 @@ export class MemStorage implements IStorage {
         avatar: avatar || null,
         points: 0,
         lastPointEarned: null,
+        dailyLinksPosted: 0,
+        lastDailyReset: null,
         linkedApiKey: null,
         inVoiceChannel: false,
         voiceChannelName: null,
@@ -204,6 +234,44 @@ export class MemStorage implements IStorage {
       this.users.set(discordId, newUser);
       return newUser;
     }
+  }
+
+  async incrementDailyLinks(userId: string): Promise<DiscordUser> {
+    const user = this.users.get(userId);
+    if (!user) {
+      throw new Error(`User ${userId} not found`);
+    }
+    user.dailyLinksPosted++;
+    this.users.set(userId, user);
+    return user;
+  }
+
+  async decrementDailyLinks(userId: string): Promise<DiscordUser> {
+    const user = this.users.get(userId);
+    if (!user) {
+      throw new Error(`User ${userId} not found`);
+    }
+    user.dailyLinksPosted = Math.max(0, user.dailyLinksPosted - 1);
+    this.users.set(userId, user);
+    return user;
+  }
+
+  async resetDailyLinksIfNeeded(userId: string): Promise<DiscordUser> {
+    const user = this.users.get(userId);
+    if (!user) {
+      throw new Error(`User ${userId} not found`);
+    }
+    
+    const now = Date.now();
+    const oneDayMs = 24 * 60 * 60 * 1000;
+    
+    if (!user.lastDailyReset || (now - user.lastDailyReset) >= oneDayMs) {
+      user.dailyLinksPosted = 0;
+      user.lastDailyReset = now;
+      this.users.set(userId, user);
+    }
+    
+    return user;
   }
 
   async getUserByApiKey(apiKey: string): Promise<DiscordUser | undefined> {
@@ -276,6 +344,8 @@ export class DbStorage implements IStorage {
       avatar: insertUser.avatar ?? null,
       points: 0,
       lastPointEarned: null,
+      dailyLinksPosted: 0,
+      lastDailyReset: null,
       linkedApiKey: null,
       inVoiceChannel: false,
       voiceChannelName: null,
@@ -317,6 +387,8 @@ export class DbStorage implements IStorage {
         avatar: avatar || null,
         points: 0,
         lastPointEarned: null,
+        dailyLinksPosted: 0,
+        lastDailyReset: null,
         linkedApiKey: null,
         inVoiceChannel: false,
         voiceChannelName: null,
@@ -324,6 +396,64 @@ export class DbStorage implements IStorage {
       }).returning();
       return result[0];
     }
+  }
+
+  async incrementDailyLinks(userId: string): Promise<DiscordUser> {
+    const user = await this.getUser(userId);
+    if (!user) {
+      throw new Error(`User ${userId} not found`);
+    }
+    
+    const result = await this.db.update(discordUsers)
+      .set({ dailyLinksPosted: user.dailyLinksPosted + 1 })
+      .where(eq(discordUsers.id, userId))
+      .returning();
+    
+    if (!result[0]) {
+      throw new Error(`User ${userId} not found`);
+    }
+    return result[0];
+  }
+
+  async decrementDailyLinks(userId: string): Promise<DiscordUser> {
+    const user = await this.getUser(userId);
+    if (!user) {
+      throw new Error(`User ${userId} not found`);
+    }
+    
+    const result = await this.db.update(discordUsers)
+      .set({ dailyLinksPosted: Math.max(0, user.dailyLinksPosted - 1) })
+      .where(eq(discordUsers.id, userId))
+      .returning();
+    
+    if (!result[0]) {
+      throw new Error(`User ${userId} not found`);
+    }
+    return result[0];
+  }
+
+  async resetDailyLinksIfNeeded(userId: string): Promise<DiscordUser> {
+    const user = await this.getUser(userId);
+    if (!user) {
+      throw new Error(`User ${userId} not found`);
+    }
+    
+    const now = Date.now();
+    const oneDayMs = 24 * 60 * 60 * 1000;
+    
+    if (!user.lastDailyReset || (now - user.lastDailyReset) >= oneDayMs) {
+      const result = await this.db.update(discordUsers)
+        .set({ dailyLinksPosted: 0, lastDailyReset: now })
+        .where(eq(discordUsers.id, userId))
+        .returning();
+      
+      if (!result[0]) {
+        throw new Error(`User ${userId} not found`);
+      }
+      return result[0];
+    }
+    
+    return user;
   }
 
   async getUserByApiKey(apiKey: string): Promise<DiscordUser | undefined> {
@@ -370,6 +500,20 @@ export class DbStorage implements IStorage {
   async createActivity(insertActivity: InsertActivity): Promise<Activity> {
     const result = await this.db.insert(activities).values(insertActivity).returning();
     return result[0];
+  }
+
+  async getActivityByLink(link: string): Promise<Activity | undefined> {
+    const result = await this.db.select().from(activities).where(eq(activities.link, link)).limit(1);
+    return result[0];
+  }
+
+  async getActivityByMessageId(messageId: string): Promise<Activity | undefined> {
+    const result = await this.db.select().from(activities).where(eq(activities.messageId, messageId)).limit(1);
+    return result[0];
+  }
+
+  async deleteActivity(id: string): Promise<void> {
+    await this.db.delete(activities).where(eq(activities.id, id));
   }
 
   async getApiKey(key: string): Promise<ApiKey | undefined> {

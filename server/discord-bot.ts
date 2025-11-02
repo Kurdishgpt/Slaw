@@ -2,7 +2,8 @@ import { Client, GatewayIntentBits, Message, REST, Routes, SlashCommandBuilder }
 import { storage } from './storage';
 
 const COOLDOWN_HOURS = 14;
-const MAX_POINTS = 10;
+const MAX_POINTS = 999;
+const DAILY_LINK_LIMIT = 10;
 const COOLDOWN_MS = COOLDOWN_HOURS * 60 * 60 * 1000;
 
 // Regex patterns for paste links and server invites
@@ -32,6 +33,28 @@ function detectLinkType(content: string): 'paste' | 'server' | null {
   // Check for server invites
   if (SERVER_INVITE_PATTERN.test(content)) {
     return 'server';
+  }
+  
+  return null;
+}
+
+function extractLink(content: string, linkType: 'paste' | 'server'): string | null {
+  if (linkType === 'paste') {
+    // Try to match any paste link pattern
+    for (const pattern of PASTE_LINK_PATTERNS) {
+      const match = content.match(pattern);
+      if (match) {
+        // Normalize to lowercase for case-insensitive duplicate detection
+        return match[0].toLowerCase();
+      }
+    }
+  } else if (linkType === 'server') {
+    // Extract server invite
+    const match = content.match(SERVER_INVITE_PATTERN);
+    if (match) {
+      // Normalize to lowercase for case-insensitive duplicate detection
+      return match[0].toLowerCase();
+    }
   }
   
   return null;
@@ -115,9 +138,32 @@ export async function initializeDiscordBot() {
         user = await storage.upsertUser(userId, username, discriminator, avatar);
       }
 
+      // Reset daily limit if needed
+      user = await storage.resetDailyLinksIfNeeded(userId);
+
       // Check if user has reached max points
       if (user.points >= MAX_POINTS) {
         await message.reply(`⚠️ You've already reached the maximum of ${MAX_POINTS} points!`);
+        return;
+      }
+
+      // Check daily link limit
+      if (user.dailyLinksPosted >= DAILY_LINK_LIMIT) {
+        await message.reply(`⚠️ You've reached the daily limit of ${DAILY_LINK_LIMIT} links! Try again tomorrow.`);
+        return;
+      }
+
+      // Extract the actual link from the message
+      const extractedLink = extractLink(message.content, linkType);
+      if (!extractedLink) {
+        await message.reply('❌ Could not extract the link from your message.');
+        return;
+      }
+
+      // Check for duplicate link using the extracted URL
+      const existingActivity = await storage.getActivityByLink(extractedLink);
+      if (existingActivity) {
+        await message.reply('⚠️ This link has already been posted! Please post a unique link.');
         return;
       }
 
@@ -136,23 +182,27 @@ export async function initializeDiscordBot() {
       const timestamp = Date.now();
       await storage.updateUserPoints(userId, newPoints, timestamp);
 
-      // Log activity
+      // Increment daily link count
+      await storage.incrementDailyLinks(userId);
+
+      // Log activity with the extracted link
       await storage.createActivity({
         userId: userId,
         type: linkType,
-        link: message.content,
+        link: extractedLink,
+        messageId: message.id,
         pointsEarned: 1,
         timestamp,
       });
 
       // Send confirmation
       const linkTypeText = linkType === 'paste' ? 'paste link' : 'server invite';
-      const pointsLeft = MAX_POINTS - newPoints;
+      const linksRemaining = DAILY_LINK_LIMIT - (user.dailyLinksPosted + 1);
       
       if (newPoints >= MAX_POINTS) {
         await message.reply(`🎉 +1 point for posting a ${linkTypeText}! You've reached the maximum of ${MAX_POINTS} points!`);
       } else {
-        await message.reply(`✅ +1 point for posting a ${linkTypeText}! Total: ${newPoints}/${MAX_POINTS} points. ${pointsLeft} points remaining.`);
+        await message.reply(`✅ +1 point for posting a ${linkTypeText}! Total: ${newPoints}/${MAX_POINTS} points. ${linksRemaining} links left today.`);
       }
 
       console.log(`✅ Awarded 1 point to ${username} (${userId}) for ${linkType} link. Total: ${newPoints} points`);
@@ -216,6 +266,35 @@ export async function initializeDiscordBot() {
           ephemeral: true,
         });
       }
+    }
+  });
+
+  // Handle message deletion
+  client.on('messageDelete', async (message) => {
+    // Only process messages from the target channel
+    if (message.channelId !== targetChannelId) return;
+    
+    // Check if this message has an associated activity
+    const activity = await storage.getActivityByMessageId(message.id);
+    if (!activity) return;
+
+    try {
+      const user = await storage.getUser(activity.userId);
+      if (!user) return;
+
+      // Remove the point
+      const newPoints = Math.max(0, user.points - activity.pointsEarned);
+      await storage.updateUserPoints(activity.userId, newPoints, user.lastPointEarned || Date.now());
+
+      // Decrement daily links count
+      await storage.decrementDailyLinks(activity.userId);
+
+      // Delete the activity
+      await storage.deleteActivity(activity.id);
+
+      console.log(`🗑️ Removed ${activity.pointsEarned} point from ${user.username} (${activity.userId}) due to message deletion. New total: ${newPoints} points`);
+    } catch (error) {
+      console.error('Error handling message deletion:', error);
     }
   });
 

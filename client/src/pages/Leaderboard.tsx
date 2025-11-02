@@ -102,7 +102,7 @@ export default function Leaderboard() {
                           </span>
                           <span className="text-sm text-muted-foreground">pts</span>
                         </div>
-                        {user.points >= 10 && (
+                        {user.points >= 999 && (
                           <Badge variant="secondary" className="text-xs" data-testid={`badge-max-${index}`}>
                             MAX REACHED
                           </Badge>

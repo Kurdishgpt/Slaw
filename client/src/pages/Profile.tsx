@@ -1,32 +1,47 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { User, Mic, MicOff, Trophy, Key } from "lucide-react";
+import { User, Mic, MicOff, Trophy, Key, LogOut } from "lucide-react";
 import type { DiscordUser } from "@shared/schema";
 
 export default function Profile() {
   const [apiKey, setApiKey] = useState("");
-  const [submittedKey, setSubmittedKey] = useState("");
+
+  // Load API key from localStorage on mount
+  useEffect(() => {
+    const savedKey = localStorage.getItem("discord_api_key");
+    if (savedKey) {
+      setApiKey(savedKey);
+    }
+  }, []);
+
+  // Save API key to localStorage when it changes
+  useEffect(() => {
+    if (apiKey && apiKey.length > 10) {
+      localStorage.setItem("discord_api_key", apiKey);
+    }
+  }, [apiKey]);
 
   const { data: profile, isLoading, error } = useQuery<DiscordUser>({
-    queryKey: ["/api/profile", submittedKey],
+    queryKey: ["/api/profile", apiKey],
     queryFn: async () => {
-      const response = await fetch(`/api/profile/${submittedKey}`);
+      const response = await fetch(`/api/profile/${apiKey}`);
       if (!response.ok) {
         throw new Error('Failed to fetch profile');
       }
       return response.json();
     },
-    enabled: !!submittedKey,
+    enabled: apiKey.length > 10,
+    refetchInterval: 5000, // Refetch every 5 seconds to update voice status
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmittedKey(apiKey);
+  const handleLogout = () => {
+    setApiKey("");
+    localStorage.removeItem("discord_api_key");
   };
 
   const formatTimeAgo = (timestamp: number | null) => {
@@ -53,35 +68,44 @@ export default function Profile() {
           <p className="text-muted-foreground">View your Discord profile and voice channel status</p>
         </div>
 
-        {!submittedKey ? (
-          <Card data-testid="card-api-key-input">
-            <CardHeader>
+        <Card data-testid="card-api-key-input">
+          <CardHeader>
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <Key className="h-6 w-6 text-primary" />
-                <CardTitle>Login with API Key</CardTitle>
+                <CardTitle>API Key Login</CardTitle>
               </div>
-              <CardDescription>
-                Enter your API key to view your profile. Generate one from the API Keys page and link it using /login in Discord.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <Input
-                    type="text"
-                    placeholder="Enter your API key"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    data-testid="input-api-key"
-                  />
-                </div>
-                <Button type="submit" data-testid="button-submit-api-key">
-                  View Profile
+              {profile && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleLogout}
+                  data-testid="button-logout"
+                >
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Logout
                 </Button>
-              </form>
-            </CardContent>
-          </Card>
-        ) : (
+              )}
+            </div>
+            <CardDescription>
+              Enter your API key to login. Generate one from the API Keys page and link it using /login in Discord.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Input
+              type="text"
+              placeholder="Enter your API key"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              data-testid="input-api-key"
+            />
+            {apiKey.length > 0 && apiKey.length <= 10 && (
+              <p className="text-sm text-muted-foreground mt-2">API key is too short</p>
+            )}
+          </CardContent>
+        </Card>
+
+        {apiKey.length > 10 && (
           <>
             {isLoading ? (
               <Card data-testid="card-loading">
@@ -105,18 +129,6 @@ export default function Profile() {
                     {error ? "Invalid API key or no user linked to this key." : "Please link your Discord account using /login command in Discord."}
                   </CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setSubmittedKey("");
-                      setApiKey("");
-                    }}
-                    data-testid="button-try-again"
-                  >
-                    Try Another Key
-                  </Button>
-                </CardContent>
               </Card>
             ) : (
               <div className="space-y-6">
@@ -201,19 +213,6 @@ export default function Profile() {
                     )}
                   </CardContent>
                 </Card>
-
-                <div className="flex justify-center">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setSubmittedKey("");
-                      setApiKey("");
-                    }}
-                    data-testid="button-logout"
-                  >
-                    Logout
-                  </Button>
-                </div>
               </div>
             )}
           </>

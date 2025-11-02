@@ -67,7 +67,9 @@ export class MemStorage implements IStorage {
   async createUser(discordId: string, insertUser: InsertDiscordUser): Promise<DiscordUser> {
     const user: DiscordUser = {
       id: discordId,
-      ...insertUser,
+      username: insertUser.username,
+      discriminator: insertUser.discriminator ?? null,
+      avatar: insertUser.avatar ?? null,
       points: 0,
       lastPointEarned: null,
     };

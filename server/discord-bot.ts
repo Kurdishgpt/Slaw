@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Message } from 'discord.js';
+import { Client, GatewayIntentBits, Message, REST, Routes, SlashCommandBuilder } from 'discord.js';
 import { storage } from './storage';
 
 const COOLDOWN_HOURS = 14;
@@ -56,12 +56,38 @@ export async function initializeDiscordBot() {
       GatewayIntentBits.Guilds,
       GatewayIntentBits.GuildMessages,
       GatewayIntentBits.MessageContent,
+      GatewayIntentBits.GuildVoiceStates,
     ],
   });
 
-  client.on('ready', () => {
+  client.on('ready', async () => {
     console.log(`✅ Discord bot logged in as ${client.user?.tag}`);
     storage.setBotStatus('online');
+
+    // Register slash commands
+    const commands = [
+      new SlashCommandBuilder()
+        .setName('login')
+        .setDescription('Link your Discord account with an API key')
+        .addStringOption(option =>
+          option.setName('apikey')
+            .setDescription('Your API key from the website')
+            .setRequired(true)
+        ),
+    ].map(command => command.toJSON());
+
+    const rest = new REST().setToken(token);
+
+    try {
+      console.log('🔄 Registering slash commands...');
+      await rest.put(
+        Routes.applicationCommands(client.user!.id),
+        { body: commands },
+      );
+      console.log('✅ Slash commands registered successfully');
+    } catch (error) {
+      console.error('❌ Error registering slash commands:', error);
+    }
   });
 
   client.on('messageCreate', async (message: Message) => {
@@ -133,6 +159,101 @@ export async function initializeDiscordBot() {
     } catch (error) {
       console.error('Error processing message:', error);
       await message.reply('❌ An error occurred while processing your message.');
+    }
+  });
+
+  // Handle slash commands
+  client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+
+    if (interaction.commandName === 'login') {
+      const apiKey = interaction.options.getString('apikey', true);
+      const userId = interaction.user.id;
+      const username = interaction.user.username;
+      const discriminator = interaction.user.discriminator === '0' ? null : interaction.user.discriminator;
+      const avatar = interaction.user.avatar;
+
+      try {
+        // Verify the API key exists
+        const keyRecord = await storage.getApiKey(apiKey);
+        if (!keyRecord) {
+          await interaction.reply({
+            content: '❌ Invalid API key. Please generate a valid API key from the website.',
+            ephemeral: true,
+          });
+          return;
+        }
+
+        // Check if API key is already linked
+        const existingUser = await storage.getUserByApiKey(apiKey);
+        if (existingUser && existingUser.id !== userId) {
+          await interaction.reply({
+            content: '❌ This API key is already linked to another Discord account.',
+            ephemeral: true,
+          });
+          return;
+        }
+
+        // Get or create user
+        let user = await storage.getUser(userId);
+        if (!user) {
+          user = await storage.upsertUser(userId, username, discriminator, avatar);
+        }
+
+        // Link the API key
+        await storage.linkApiKey(userId, apiKey);
+
+        await interaction.reply({
+          content: `✅ Successfully linked your Discord account to the API key! You can now view your profile on the website.`,
+          ephemeral: true,
+        });
+
+        console.log(`✅ Linked API key for ${username} (${userId})`);
+      } catch (error) {
+        console.error('Error linking API key:', error);
+        await interaction.reply({
+          content: '❌ An error occurred while linking your API key.',
+          ephemeral: true,
+        });
+      }
+    }
+  });
+
+  // Handle voice state updates
+  client.on('voiceStateUpdate', async (oldState, newState) => {
+    const userId = newState.member?.user.id;
+    if (!userId) return;
+
+    const username = newState.member?.user.username || 'Unknown';
+    const discriminator = newState.member?.user.discriminator === '0' ? null : newState.member?.user.discriminator;
+    const avatar = newState.member?.user.avatar || null;
+
+    try {
+      // Ensure user exists
+      let user = await storage.getUser(userId);
+      if (!user) {
+        user = await storage.upsertUser(userId, username, discriminator, avatar);
+      }
+
+      // Check if user joined a voice channel
+      if (!oldState.channelId && newState.channelId) {
+        const channelName = newState.channel?.name || 'Unknown Channel';
+        await storage.updateVoiceStatus(userId, true, channelName);
+        console.log(`🎤 ${username} joined voice channel: ${channelName}`);
+      }
+      // Check if user left a voice channel
+      else if (oldState.channelId && !newState.channelId) {
+        await storage.updateVoiceStatus(userId, false, null);
+        console.log(`🔇 ${username} left voice channel`);
+      }
+      // Check if user switched voice channels
+      else if (oldState.channelId !== newState.channelId && newState.channelId) {
+        const channelName = newState.channel?.name || 'Unknown Channel';
+        await storage.updateVoiceStatus(userId, true, channelName);
+        console.log(`🎤 ${username} switched to voice channel: ${channelName}`);
+      }
+    } catch (error) {
+      console.error('Error updating voice status:', error);
     }
   });
 

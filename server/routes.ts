@@ -34,6 +34,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get user profile by API key
+  app.get("/api/profile/:apiKey", async (req, res) => {
+    try {
+      const apiKey = req.params.apiKey;
+      
+      // Verify API key exists
+      const keyRecord = await storage.getApiKey(apiKey);
+      if (!keyRecord) {
+        return res.status(404).json({ error: "Invalid API key" });
+      }
+
+      // Get user by API key
+      const user = await storage.getUserByApiKey(apiKey);
+      if (!user) {
+        return res.status(404).json({ error: "No user linked to this API key. Use /login command in Discord to link your account." });
+      }
+
+      res.json(user);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch profile" });
+    }
+  });
+
   // Get recent activities
   app.get("/api/activities/recent", async (req, res) => {
     try {

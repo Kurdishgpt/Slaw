@@ -1,4 +1,4 @@
-import { LayoutDashboard, Trophy, Key, Bot } from "lucide-react";
+import { LayoutDashboard, Trophy, Key, Bot, User } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
   Sidebar,
@@ -22,6 +22,11 @@ const menuItems = [
     title: "Leaderboard",
     url: "/leaderboard",
     icon: Trophy,
+  },
+  {
+    title: "Profile",
+    url: "/profile",
+    icon: User,
   },
   {
     title: "API Keys",

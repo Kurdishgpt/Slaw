@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, bigint } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, bigint, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -11,6 +11,10 @@ export const discordUsers = pgTable("discord_users", {
   avatar: text("avatar"),
   points: integer("points").notNull().default(0),
   lastPointEarned: bigint("last_point_earned", { mode: "number" }),
+  linkedApiKey: text("linked_api_key"),
+  inVoiceChannel: boolean("in_voice_channel").notNull().default(false),
+  voiceChannelName: text("voice_channel_name"),
+  voiceChannelJoinedAt: bigint("voice_channel_joined_at", { mode: "number" }),
 });
 
 // Activity log for tracking point-earning events
@@ -64,4 +68,16 @@ export type DashboardStats = {
   linksPosted: number;
   botStatus: 'online' | 'offline';
   lastSync: number;
+};
+
+// User profile with voice status
+export type UserProfile = {
+  id: string;
+  username: string;
+  discriminator: string | null;
+  avatar: string | null;
+  points: number;
+  inVoiceChannel: boolean;
+  voiceChannelName: string | null;
+  voiceChannelJoinedAt: number | null;
 };

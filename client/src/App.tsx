@@ -10,6 +10,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import Dashboard from "@/pages/Dashboard";
 import Leaderboard from "@/pages/Leaderboard";
 import ApiKeys from "@/pages/ApiKeys";
+import Profile from "@/pages/Profile";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -18,6 +19,7 @@ function Router() {
       <Route path="/" component={Dashboard} />
       <Route path="/leaderboard" component={Leaderboard} />
       <Route path="/api-keys" component={ApiKeys} />
+      <Route path="/profile" component={Profile} />
       <Route component={NotFound} />
     </Switch>
   );

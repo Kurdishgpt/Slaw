@@ -4,11 +4,14 @@ import { randomUUID } from "crypto";
 export interface IStorage {
   // Discord Users
   getUser(id: string): Promise<DiscordUser | undefined>;
+  getUserByApiKey(apiKey: string): Promise<DiscordUser | undefined>;
   getAllUsers(): Promise<DiscordUser[]>;
   getTopUsers(limit: number): Promise<DiscordUser[]>;
   createUser(discordId: string, user: InsertDiscordUser): Promise<DiscordUser>;
   updateUserPoints(id: string, points: number, timestamp: number): Promise<DiscordUser>;
   upsertUser(discordId: string, username: string, discriminator?: string | null, avatar?: string | null): Promise<DiscordUser>;
+  linkApiKey(userId: string, apiKey: string): Promise<DiscordUser>;
+  updateVoiceStatus(userId: string, inVoice: boolean, channelName: string | null): Promise<DiscordUser>;
   
   // Activities
   getRecentActivities(limit: number): Promise<Activity[]>;
@@ -72,6 +75,10 @@ export class MemStorage implements IStorage {
       avatar: insertUser.avatar ?? null,
       points: 0,
       lastPointEarned: null,
+      linkedApiKey: null,
+      inVoiceChannel: false,
+      voiceChannelName: null,
+      voiceChannelJoinedAt: null,
     };
     this.users.set(user.id, user);
     return user;
@@ -185,10 +192,40 @@ export class MemStorage implements IStorage {
         avatar: avatar || null,
         points: 0,
         lastPointEarned: null,
+        linkedApiKey: null,
+        inVoiceChannel: false,
+        voiceChannelName: null,
+        voiceChannelJoinedAt: null,
       };
       this.users.set(discordId, newUser);
       return newUser;
     }
+  }
+
+  async getUserByApiKey(apiKey: string): Promise<DiscordUser | undefined> {
+    return Array.from(this.users.values()).find(user => user.linkedApiKey === apiKey);
+  }
+
+  async linkApiKey(userId: string, apiKey: string): Promise<DiscordUser> {
+    const user = this.users.get(userId);
+    if (!user) {
+      throw new Error(`User ${userId} not found`);
+    }
+    user.linkedApiKey = apiKey;
+    this.users.set(userId, user);
+    return user;
+  }
+
+  async updateVoiceStatus(userId: string, inVoice: boolean, channelName: string | null): Promise<DiscordUser> {
+    const user = this.users.get(userId);
+    if (!user) {
+      throw new Error(`User ${userId} not found`);
+    }
+    user.inVoiceChannel = inVoice;
+    user.voiceChannelName = channelName;
+    user.voiceChannelJoinedAt = inVoice ? Date.now() : null;
+    this.users.set(userId, user);
+    return user;
   }
 }
 

@@ -13,8 +13,10 @@ This application consists of two main components:
 
 ### Discord Bot
 - **Automatic Point Tracking**: Awards 1 point for each paste link or server invite posted
-- **Cooldown System**: 14-hour cooldown between point awards per user
-- **Point Limit**: Maximum of 10 points per user
+- **Voice Channel Points**: Awards 1 point for every hour spent in a voice channel
+- **Cooldown System**: 14-hour cooldown between point awards for paste links and server invites
+- **Daily Link Limit**: Users can post up to 10 links per day
+- **Point Limit**: Maximum of 999 points per user
 - **Link Detection**: Supports multiple paste services (pastebin, paste.ee, hastebin, etc.) and Discord server invites
 - **User Feedback**: Bot replies with confirmation messages showing point totals and remaining cooldown time
 
@@ -57,10 +59,15 @@ The following secrets are already configured:
 ## How It Works
 
 ### Point System
-- **1 Point**: Awarded for posting a valid paste link or server invite
-- **Cooldown**: 14 hours between earning points
-- **Maximum**: 10 points per user
-- **Detection**: Automatically detects supported paste services and Discord invites
+- **Paste Links & Server Invites**: 1 point per valid link posted
+  - Cooldown: 14 hours between earning points from links
+  - Daily Limit: 10 links per day
+- **Voice Channel Activity**: 1 point per hour in voice
+  - Automatic tracking while in any voice channel
+  - No cooldown for voice points
+  - Points awarded every hour automatically
+- **Maximum**: 999 points per user
+- **Detection**: Automatically detects supported paste services, Discord invites, and voice activity
 
 ### Supported Paste Services
 - pastebin.com

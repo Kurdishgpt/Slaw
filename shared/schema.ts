@@ -17,13 +17,14 @@ export const discordUsers = pgTable("discord_users", {
   inVoiceChannel: boolean("in_voice_channel").notNull().default(false),
   voiceChannelName: text("voice_channel_name"),
   voiceChannelJoinedAt: bigint("voice_channel_joined_at", { mode: "number" }),
+  lastVoicePointEarned: bigint("last_voice_point_earned", { mode: "number" }),
 });
 
 // Activity log for tracking point-earning events
 export const activities = pgTable("activities", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull(),
-  type: text("type").notNull(), // 'paste' or 'server'
+  type: text("type").notNull(), // 'paste', 'server', or 'voice'
   link: text("link").notNull(),
   messageId: varchar("message_id"),
   pointsEarned: integer("points_earned").notNull(),

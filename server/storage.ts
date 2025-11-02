@@ -23,6 +23,8 @@ export interface IStorage {
   incrementDailyLinks(userId: string): Promise<DiscordUser>;
   decrementDailyLinks(userId: string): Promise<DiscordUser>;
   resetDailyLinksIfNeeded(userId: string): Promise<DiscordUser>;
+  getUsersInVoice(): Promise<DiscordUser[]>;
+  updateLastVoicePointEarned(userId: string, timestamp: number | null): Promise<DiscordUser>;
   
   // Activities
   getRecentActivities(limit: number): Promise<Activity[]>;
@@ -95,6 +97,7 @@ export class MemStorage implements IStorage {
       inVoiceChannel: false,
       voiceChannelName: null,
       voiceChannelJoinedAt: null,
+      lastVoicePointEarned: null,
     };
     this.users.set(user.id, user);
     return user;
@@ -230,6 +233,7 @@ export class MemStorage implements IStorage {
         inVoiceChannel: false,
         voiceChannelName: null,
         voiceChannelJoinedAt: null,
+        lastVoicePointEarned: null,
       };
       this.users.set(discordId, newUser);
       return newUser;
@@ -299,6 +303,20 @@ export class MemStorage implements IStorage {
     this.users.set(userId, user);
     return user;
   }
+
+  async getUsersInVoice(): Promise<DiscordUser[]> {
+    return Array.from(this.users.values()).filter(user => user.inVoiceChannel);
+  }
+
+  async updateLastVoicePointEarned(userId: string, timestamp: number | null): Promise<DiscordUser> {
+    const user = this.users.get(userId);
+    if (!user) {
+      throw new Error(`User ${userId} not found`);
+    }
+    user.lastVoicePointEarned = timestamp;
+    this.users.set(userId, user);
+    return user;
+  }
 }
 
 export class DbStorage implements IStorage {
@@ -350,6 +368,7 @@ export class DbStorage implements IStorage {
       inVoiceChannel: false,
       voiceChannelName: null,
       voiceChannelJoinedAt: null,
+      lastVoicePointEarned: null,
     }).returning();
     return result[0];
   }
@@ -393,6 +412,7 @@ export class DbStorage implements IStorage {
         inVoiceChannel: false,
         voiceChannelName: null,
         voiceChannelJoinedAt: null,
+        lastVoicePointEarned: null,
       }).returning();
       return result[0];
     }
@@ -480,6 +500,22 @@ export class DbStorage implements IStorage {
         voiceChannelName: channelName,
         voiceChannelJoinedAt: inVoice ? Date.now() : null
       })
+      .where(eq(discordUsers.id, userId))
+      .returning();
+    
+    if (!result[0]) {
+      throw new Error(`User ${userId} not found`);
+    }
+    return result[0];
+  }
+
+  async getUsersInVoice(): Promise<DiscordUser[]> {
+    return await this.db.select().from(discordUsers).where(eq(discordUsers.inVoiceChannel, true));
+  }
+
+  async updateLastVoicePointEarned(userId: string, timestamp: number | null): Promise<DiscordUser> {
+    const result = await this.db.update(discordUsers)
+      .set({ lastVoicePointEarned: timestamp })
       .where(eq(discordUsers.id, userId))
       .returning();
     

@@ -5,6 +5,8 @@ const COOLDOWN_HOURS = 14;
 const MAX_POINTS = 999;
 const DAILY_LINK_LIMIT = 10;
 const COOLDOWN_MS = COOLDOWN_HOURS * 60 * 60 * 1000;
+const VOICE_POINT_INTERVAL_MS = 60 * 60 * 1000; // 1 hour in milliseconds
+const VOICE_CHECK_INTERVAL_MS = 5 * 60 * 1000; // Check every 5 minutes
 
 // Regex patterns for paste links and server invites
 const PASTE_LINK_PATTERNS = [
@@ -60,6 +62,69 @@ function extractLink(content: string, linkType: 'paste' | 'server'): string | nu
   return null;
 }
 
+async function checkAndAwardVoicePoints() {
+  try {
+    const usersInVoice = await storage.getUsersInVoice();
+    const now = Date.now();
+
+    for (const user of usersInVoice) {
+      // Skip if user has reached max points
+      if (user.points >= MAX_POINTS) {
+        continue;
+      }
+
+      // Calculate time in voice since join or last point
+      const referenceTime = user.lastVoicePointEarned || user.voiceChannelJoinedAt;
+      if (!referenceTime) {
+        continue;
+      }
+
+      const timeInVoice = now - referenceTime;
+
+      // Check if user has been in voice for at least 1 hour
+      if (timeInVoice >= VOICE_POINT_INTERVAL_MS) {
+        // Calculate how many hours worth of points to award
+        const hoursEarned = Math.floor(timeInVoice / VOICE_POINT_INTERVAL_MS);
+        
+        // Award points (but respect max points limit)
+        const pointsToAward = Math.min(hoursEarned, MAX_POINTS - user.points);
+        
+        if (pointsToAward > 0) {
+          const newPoints = user.points + pointsToAward;
+          await storage.updateUserPoints(user.id, newPoints, now);
+          
+          // Advance lastVoicePointEarned by whole hours only to preserve partial progress
+          const newLastVoicePointEarned = referenceTime + (hoursEarned * VOICE_POINT_INTERVAL_MS);
+          await storage.updateLastVoicePointEarned(user.id, newLastVoicePointEarned);
+
+          // Log activity for each point earned
+          for (let i = 0; i < pointsToAward; i++) {
+            await storage.createActivity({
+              userId: user.id,
+              type: 'voice',
+              link: user.voiceChannelName || 'Voice Channel',
+              pointsEarned: 1,
+              timestamp: now,
+            });
+          }
+
+          console.log(`🎤 Awarded ${pointsToAward} point(s) to ${user.username} (${user.id}) for voice activity. Total: ${newPoints} points`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error checking voice points:', error);
+  }
+}
+
+function startVoicePointChecker() {
+  // Run the check immediately
+  checkAndAwardVoicePoints();
+  
+  // Then run it every 5 minutes
+  setInterval(checkAndAwardVoicePoints, VOICE_CHECK_INTERVAL_MS);
+}
+
 export async function initializeDiscordBot() {
   const token = process.env.DISCORD_BOT_TOKEN;
   const targetChannelId = process.env.DISCORD_TARGET_CHANNEL_ID;
@@ -111,6 +176,10 @@ export async function initializeDiscordBot() {
     } catch (error) {
       console.error('❌ Error registering slash commands:', error);
     }
+
+    // Start voice point checker
+    startVoicePointChecker();
+    console.log('🎤 Voice point checker started - users will earn 1 point per hour in voice');
   });
 
   client.on('messageCreate', async (message: Message) => {
@@ -323,6 +392,8 @@ export async function initializeDiscordBot() {
       // Check if user left a voice channel
       else if (oldState.channelId && !newState.channelId) {
         await storage.updateVoiceStatus(userId, false, null);
+        // Clear lastVoicePointEarned so each session starts fresh
+        await storage.updateLastVoicePointEarned(userId, null);
         console.log(`🔇 ${username} left voice channel`);
       }
       // Check if user switched voice channels

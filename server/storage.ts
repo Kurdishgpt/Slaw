@@ -429,4 +429,15 @@ export class DbStorage implements IStorage {
   }
 }
 
-export const storage = new DbStorage();
+let storage: IStorage = new MemStorage();
+
+export function initializeStorage(useDatabaseStorage: boolean) {
+  if (useDatabaseStorage && process.env.DATABASE_URL) {
+    storage = new DbStorage();
+    console.log('📊 Using database storage - data will persist across restarts');
+  } else {
+    console.log('💾 Using in-memory storage - data will be lost on restart');
+  }
+}
+
+export { storage };

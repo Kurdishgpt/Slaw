@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initializeDiscordBot } from "./discord-bot";
+import { initializeDatabase } from "./init-db";
 
 const app = express();
 
@@ -48,6 +49,11 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  const dbReady = await initializeDatabase();
+  
+  const { initializeStorage } = await import("./storage");
+  initializeStorage(dbReady);
+
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

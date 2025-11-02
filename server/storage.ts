@@ -1,5 +1,9 @@
 import { type DiscordUser, type InsertDiscordUser, type Activity, type InsertActivity, type ApiKey, type InsertApiKey, type DashboardStats } from "@shared/schema";
+import { discordUsers, activities, apiKeys } from "@shared/schema";
 import { randomUUID } from "crypto";
+import { drizzle } from "drizzle-orm/neon-serverless";
+import { Pool } from "@neondatabase/serverless";
+import { eq, desc } from "drizzle-orm";
 
 export interface IStorage {
   // Discord Users
@@ -229,4 +233,200 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+export class DbStorage implements IStorage {
+  private db;
+  private botStatus: 'online' | 'offline' = 'offline';
+  private lastSync: number = Date.now();
+
+  constructor() {
+    if (!process.env.DATABASE_URL) {
+      throw new Error("DATABASE_URL is not set");
+    }
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    this.db = drizzle(pool);
+  }
+
+  setBotStatus(status: 'online' | 'offline') {
+    this.botStatus = status;
+    this.lastSync = Date.now();
+  }
+
+  getBotStatus(): { status: 'online' | 'offline'; lastSync: number } {
+    return { status: this.botStatus, lastSync: this.lastSync };
+  }
+
+  async getUser(id: string): Promise<DiscordUser | undefined> {
+    const result = await this.db.select().from(discordUsers).where(eq(discordUsers.id, id)).limit(1);
+    return result[0];
+  }
+
+  async getAllUsers(): Promise<DiscordUser[]> {
+    return await this.db.select().from(discordUsers).orderBy(desc(discordUsers.points));
+  }
+
+  async getTopUsers(limit: number): Promise<DiscordUser[]> {
+    return await this.db.select().from(discordUsers).orderBy(desc(discordUsers.points)).limit(limit);
+  }
+
+  async createUser(discordId: string, insertUser: InsertDiscordUser): Promise<DiscordUser> {
+    const result = await this.db.insert(discordUsers).values({
+      id: discordId,
+      username: insertUser.username,
+      discriminator: insertUser.discriminator ?? null,
+      avatar: insertUser.avatar ?? null,
+      points: 0,
+      lastPointEarned: null,
+      linkedApiKey: null,
+      inVoiceChannel: false,
+      voiceChannelName: null,
+      voiceChannelJoinedAt: null,
+    }).returning();
+    return result[0];
+  }
+
+  async updateUserPoints(id: string, points: number, timestamp: number): Promise<DiscordUser> {
+    const result = await this.db.update(discordUsers)
+      .set({ points, lastPointEarned: timestamp })
+      .where(eq(discordUsers.id, id))
+      .returning();
+    
+    if (!result[0]) {
+      throw new Error(`User ${id} not found`);
+    }
+    return result[0];
+  }
+
+  async upsertUser(discordId: string, username: string, discriminator?: string | null, avatar?: string | null): Promise<DiscordUser> {
+    const existing = await this.getUser(discordId);
+    
+    if (existing) {
+      const result = await this.db.update(discordUsers)
+        .set({ 
+          username, 
+          discriminator: discriminator || null, 
+          avatar: avatar || null 
+        })
+        .where(eq(discordUsers.id, discordId))
+        .returning();
+      return result[0];
+    } else {
+      const result = await this.db.insert(discordUsers).values({
+        id: discordId,
+        username,
+        discriminator: discriminator || null,
+        avatar: avatar || null,
+        points: 0,
+        lastPointEarned: null,
+        linkedApiKey: null,
+        inVoiceChannel: false,
+        voiceChannelName: null,
+        voiceChannelJoinedAt: null,
+      }).returning();
+      return result[0];
+    }
+  }
+
+  async getUserByApiKey(apiKey: string): Promise<DiscordUser | undefined> {
+    const result = await this.db.select().from(discordUsers).where(eq(discordUsers.linkedApiKey, apiKey)).limit(1);
+    return result[0];
+  }
+
+  async linkApiKey(userId: string, apiKey: string): Promise<DiscordUser> {
+    const result = await this.db.update(discordUsers)
+      .set({ linkedApiKey: apiKey })
+      .where(eq(discordUsers.id, userId))
+      .returning();
+    
+    if (!result[0]) {
+      throw new Error(`User ${userId} not found`);
+    }
+    return result[0];
+  }
+
+  async updateVoiceStatus(userId: string, inVoice: boolean, channelName: string | null): Promise<DiscordUser> {
+    const result = await this.db.update(discordUsers)
+      .set({ 
+        inVoiceChannel: inVoice, 
+        voiceChannelName: channelName,
+        voiceChannelJoinedAt: inVoice ? Date.now() : null
+      })
+      .where(eq(discordUsers.id, userId))
+      .returning();
+    
+    if (!result[0]) {
+      throw new Error(`User ${userId} not found`);
+    }
+    return result[0];
+  }
+
+  async getRecentActivities(limit: number): Promise<Activity[]> {
+    return await this.db.select().from(activities).orderBy(desc(activities.timestamp)).limit(limit);
+  }
+
+  async getAllActivities(): Promise<Activity[]> {
+    return await this.db.select().from(activities).orderBy(desc(activities.timestamp));
+  }
+
+  async createActivity(insertActivity: InsertActivity): Promise<Activity> {
+    const result = await this.db.insert(activities).values(insertActivity).returning();
+    return result[0];
+  }
+
+  async getApiKey(key: string): Promise<ApiKey | undefined> {
+    const result = await this.db.select().from(apiKeys).where(eq(apiKeys.key, key)).limit(1);
+    return result[0];
+  }
+
+  async getApiKeyById(id: string): Promise<ApiKey | undefined> {
+    const result = await this.db.select().from(apiKeys).where(eq(apiKeys.id, id)).limit(1);
+    return result[0];
+  }
+
+  async getAllApiKeys(): Promise<ApiKey[]> {
+    return await this.db.select().from(apiKeys).orderBy(desc(apiKeys.createdAt));
+  }
+
+  async createApiKey(insertApiKey: InsertApiKey): Promise<ApiKey> {
+    const result = await this.db.insert(apiKeys).values({
+      ...insertApiKey,
+      createdAt: Date.now(),
+      lastUsed: null,
+    }).returning();
+    return result[0];
+  }
+
+  async deleteApiKey(id: string): Promise<void> {
+    await this.db.delete(apiKeys).where(eq(apiKeys.id, id));
+  }
+
+  async updateApiKeyLastUsed(id: string, timestamp: number): Promise<void> {
+    await this.db.update(apiKeys)
+      .set({ lastUsed: timestamp })
+      .where(eq(apiKeys.id, id));
+  }
+
+  async getStats(): Promise<DashboardStats> {
+    const allUsers = await this.db.select().from(discordUsers);
+    const allActivities = await this.db.select().from(activities);
+    
+    const now = Date.now();
+    const oneDayAgo = now - (24 * 60 * 60 * 1000);
+    
+    const activeToday = new Set(
+      allActivities
+        .filter(a => a.timestamp >= oneDayAgo)
+        .map(a => a.userId)
+    ).size;
+
+    return {
+      totalUsers: allUsers.length,
+      totalPoints: allUsers.reduce((sum, user) => sum + user.points, 0),
+      activeToday,
+      linksPosted: allActivities.length,
+      botStatus: this.botStatus,
+      lastSync: this.lastSync,
+    };
+  }
+}
+
+export const storage = new DbStorage();

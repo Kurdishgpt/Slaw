@@ -14,6 +14,13 @@ export default function Profile() {
 
   const { data: profile, isLoading, error } = useQuery<DiscordUser>({
     queryKey: ["/api/profile", submittedKey],
+    queryFn: async () => {
+      const response = await fetch(`/api/profile/${submittedKey}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch profile');
+      }
+      return response.json();
+    },
     enabled: !!submittedKey,
   });
 

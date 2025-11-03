@@ -1,0 +1,18 @@
+{
+  "name": "discord-point-tracker-bot",
+  "version": "1.0.0",
+  "description": "Discord bot for tracking user points from paste links, server invites, and voice activity",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "drizzle-orm": "^0.36.4",
+    "@neondatabase/serverless": "^0.10.6"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

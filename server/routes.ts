@@ -10,6 +10,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const stats = await storage.getStats();
       res.json(stats);
     } catch (error) {
+      console.error("Error fetching stats:", error);
       res.status(500).json({ error: "Failed to fetch stats" });
     }
   });
@@ -20,6 +21,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const users = await storage.getAllUsers();
       res.json(users);
     } catch (error) {
+      console.error("Error fetching users:", error);
       res.status(500).json({ error: "Failed to fetch users" });
     }
   });
@@ -30,6 +32,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const users = await storage.getTopUsers(5);
       res.json(users);
     } catch (error) {
+      console.error("Error fetching top users:", error);
       res.status(500).json({ error: "Failed to fetch top users" });
     }
   });
@@ -63,6 +66,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const activities = await storage.getRecentActivities(10);
       res.json(activities);
     } catch (error) {
+      console.error("Error fetching activities:", error);
       res.status(500).json({ error: "Failed to fetch activities" });
     }
   });
@@ -73,6 +77,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const keys = await storage.getAllApiKeys();
       res.json(keys);
     } catch (error) {
+      console.error("Error fetching API keys:", error);
       res.status(500).json({ error: "Failed to fetch API keys" });
     }
   });
@@ -84,6 +89,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const apiKey = await storage.createApiKey({ key });
       res.json(apiKey);
     } catch (error) {
+      console.error("Error generating API key:", error);
       res.status(500).json({ error: "Failed to generate API key" });
     }
   });

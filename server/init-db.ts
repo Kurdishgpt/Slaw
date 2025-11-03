@@ -28,10 +28,13 @@ export async function initializeDatabase(): Promise<boolean> {
           avatar TEXT,
           points INTEGER NOT NULL DEFAULT 0,
           last_point_earned BIGINT,
+          daily_links_posted INTEGER NOT NULL DEFAULT 0,
+          last_daily_reset BIGINT,
           linked_api_key TEXT,
           in_voice_channel BOOLEAN NOT NULL DEFAULT false,
           voice_channel_name TEXT,
-          voice_channel_joined_at BIGINT
+          voice_channel_joined_at BIGINT,
+          last_voice_point_earned BIGINT
         );
       `;
 
@@ -41,6 +44,7 @@ export async function initializeDatabase(): Promise<boolean> {
           user_id VARCHAR NOT NULL,
           type TEXT NOT NULL,
           link TEXT NOT NULL,
+          message_id VARCHAR,
           points_earned INTEGER NOT NULL,
           timestamp BIGINT NOT NULL
         );
